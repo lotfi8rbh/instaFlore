@@ -90,7 +90,8 @@ class TfliteFlowerClassifierService {
   Interpreter _interpreterOrThrow() {
     final Interpreter? interpreter = _interpreter;
     if (interpreter == null) {
-      throw StateError('Le modèle n\'est pas chargé. Appelle load() avant classify().');
+      throw StateError(
+          'Le modèle n\'est pas chargé. Appelle load() avant classify().');
     }
     return interpreter;
   }
@@ -126,7 +127,8 @@ class TfliteFlowerClassifierService {
   List<List<List<List<double>>>> _inputTensorOrThrow() {
     final List<List<List<List<double>>>>? tensor = _inputTensor4D;
     if (tensor == null) {
-      throw StateError('Tenseur d\'entrée non initialisé. Appelle load() avant classify().');
+      throw StateError(
+          'Tenseur d\'entrée non initialisé. Appelle load() avant classify().');
     }
     return tensor;
   }
@@ -134,7 +136,8 @@ class TfliteFlowerClassifierService {
   List<List<double>> _outputTensorOrThrow() {
     final List<List<double>>? tensor = _outputTensor;
     if (tensor == null) {
-      throw StateError('Tenseur de sortie non initialisé. Appelle load() avant classify().');
+      throw StateError(
+          'Tenseur de sortie non initialisé. Appelle load() avant classify().');
     }
     return tensor;
   }
@@ -147,7 +150,9 @@ class TfliteFlowerClassifierService {
     for (final batch in inputTensor) {
       for (final row in batch) {
         for (final pixel in row) {
-          for (int channelIndex = 0; channelIndex < pixel.length; channelIndex++) {
+          for (int channelIndex = 0;
+              channelIndex < pixel.length;
+              channelIndex++) {
             pixel[channelIndex] = flatInput[cursor++];
           }
         }
