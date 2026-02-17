@@ -37,10 +37,18 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
   }
 
   Future<void> _initialize() async {
+    await _disposeCameraController();
+
     setState(() {
       _isInitializing = true;
       _errorMessage = null;
+      _isProcessingFrame = false;
+      _topPrediction = null;
+      _lastInferenceMs = null;
     });
+
+    _inputBuffer = null;
+    _frameCounter = 0;
 
     try {
       final PermissionStatus permissionStatus =
@@ -88,12 +96,18 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       setState(() {
         _cameraController = controller;
       });
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('Erreur initialisation caméra/inférence: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (!mounted) {
         return;
       }
+
+      await _disposeCameraController();
+
       setState(() {
-        _errorMessage = error.toString();
+        _errorMessage = 'Initialisation échouée: $error';
       });
     } finally {
       if (mounted) {
@@ -105,7 +119,9 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
   }
 
   Future<void> _onFrame(CameraImage image) async {
-    if (_isProcessingFrame || !_classifierService.isReady) {
+    if (_isProcessingFrame ||
+        !_classifierService.isReady ||
+        _errorMessage != null) {
       return;
     }
 
@@ -145,25 +161,53 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
         _topPrediction = predictions.first;
         _lastInferenceMs = stopwatch.elapsedMicroseconds / 1000;
       });
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Erreur pendant l\'analyse temps réel: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (!mounted) {
         return;
       }
+
+      await _disposeCameraController();
+
       setState(() {
-        _errorMessage = 'Erreur pendant l\'analyse temps réel.';
+        _errorMessage = 'Erreur pendant l\'analyse temps réel: $error';
       });
     } finally {
       _isProcessingFrame = false;
     }
   }
 
+  Future<void> _disposeCameraController() async {
+    final CameraController? controller = _cameraController;
+    _cameraController = null;
+
+    if (controller == null) {
+      return;
+    }
+
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } catch (_) {}
+
+    try {
+      await controller.dispose();
+    } catch (_) {}
+  }
+
+  void _retry() {
+    if (_isInitializing) {
+      return;
+    }
+    _initialize();
+  }
+
   @override
   void dispose() {
-    final CameraController? controller = _cameraController;
-    if (controller != null) {
-      controller.stopImageStream();
-      controller.dispose();
-    }
+    _disposeCameraController();
     _classifierService.dispose();
     _inputBuffer = null;
     super.dispose();
@@ -197,7 +241,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
               ),
               const SizedBox(height: 12),
               ElevatedButton(
-                onPressed: _initialize,
+                onPressed: _retry,
                 child: const Text('Réessayer'),
               ),
             ],

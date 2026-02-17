@@ -13,8 +13,12 @@ class TfliteFlowerClassifierService {
   List<String> _labels = const [];
   List<int> _inputShape = const [];
   List<int> _outputShape = const [];
+  TensorType? _inputTensorType;
+  TensorType? _outputTensorType;
   List<List<List<List<double>>>>? _inputTensor4D;
+  List<List<List<List<int>>>>? _inputTensor4DQuantized;
   List<List<double>>? _outputTensor;
+  Object? _dynamicOutputTensor;
   int _flatInputLength = 0;
 
   bool get isReady => _interpreter != null && _labels.isNotEmpty;
@@ -30,8 +34,13 @@ class TfliteFlowerClassifierService {
     }
 
     _interpreter = await Interpreter.fromAsset(modelAssetPath);
-    _inputShape = _interpreter!.getInputTensor(0).shape;
-    _outputShape = _interpreter!.getOutputTensor(0).shape;
+    final Tensor inputTensor = _interpreter!.getInputTensor(0);
+    final Tensor outputTensor = _interpreter!.getOutputTensor(0);
+
+    _inputShape = inputTensor.shape;
+    _outputShape = outputTensor.shape;
+    _inputTensorType = inputTensor.type;
+    _outputTensorType = outputTensor.type;
     _labels = await _loadLabels();
     _initializeReusableTensors();
 
@@ -54,15 +63,21 @@ class TfliteFlowerClassifierService {
       );
     }
 
-    final List<List<List<List<double>>>> inputTensor = _inputTensorOrThrow();
-    final List<List<double>> outputTensor = _outputTensorOrThrow();
-    _fillInputTensorFromFlat(normalizedInput, inputTensor);
+    final Object inputTensor = _prepareInputTensor(normalizedInput);
+    final Object outputTensor = _outputTensorForRunOrThrow();
 
     interpreter.run(inputTensor, outputTensor);
 
-    final List<double> scores = outputTensor.first;
+    final List<double> scores = _extractScoresFromOutput(outputTensor);
+    final int usableScoresCount =
+        scores.length < _labels.length ? scores.length : _labels.length;
+
+    if (usableScoresCount == 0) {
+      throw StateError('Le modèle a retourné une sortie vide.');
+    }
+
     final List<FlowerPrediction> predictions = List<FlowerPrediction>.generate(
-      scores.length,
+      usableScoresCount,
       (int index) => FlowerPrediction(
         label: _labels[index],
         confidence: scores[index],
@@ -82,8 +97,12 @@ class TfliteFlowerClassifierService {
     _labels = const [];
     _inputShape = const [];
     _outputShape = const [];
+    _inputTensorType = null;
+    _outputTensorType = null;
     _inputTensor4D = null;
+    _inputTensor4DQuantized = null;
     _outputTensor = null;
+    _dynamicOutputTensor = null;
     _flatInputLength = 0;
   }
 
@@ -120,8 +139,32 @@ class TfliteFlowerClassifierService {
       (int current, int next) => current * next,
     );
 
-    _inputTensor4D = _createInputTensor(_inputShape);
-    _outputTensor = _createOutputTensor(_outputShape);
+    final TensorType inputType = _inputTensorType ?? TensorType.float32;
+    if (inputType == TensorType.float32) {
+      _inputTensor4D = _createInputTensor(_inputShape);
+      _inputTensor4DQuantized = null;
+    } else if (inputType == TensorType.uint8 || inputType == TensorType.int8) {
+      _inputTensor4DQuantized = _createQuantizedInputTensor(_inputShape);
+      _inputTensor4D = null;
+    } else {
+      throw UnsupportedError('Type d\'entrée non supporté: $inputType');
+    }
+
+    final TensorType outputType = _outputTensorType ?? TensorType.float32;
+    if (_outputShape.length == 2 && outputType == TensorType.float32) {
+      _outputTensor = _createOutputTensor(_outputShape);
+      _dynamicOutputTensor = null;
+    } else if (outputType == TensorType.float32 ||
+        outputType == TensorType.uint8 ||
+        outputType == TensorType.int8) {
+      _dynamicOutputTensor = _createDynamicTensor(
+        _outputShape,
+        outputType == TensorType.float32 ? 0.0 : 0,
+      );
+      _outputTensor = null;
+    } else {
+      throw UnsupportedError('Type de sortie non supporté: $outputType');
+    }
   }
 
   List<List<List<List<double>>>> _inputTensorOrThrow() {
@@ -133,11 +176,80 @@ class TfliteFlowerClassifierService {
     return tensor;
   }
 
-  List<List<double>> _outputTensorOrThrow() {
-    final List<List<double>>? tensor = _outputTensor;
+  Object _outputTensorForRunOrThrow() {
+    final List<List<double>>? outputTensor2D = _outputTensor;
+    if (outputTensor2D != null) {
+      return outputTensor2D;
+    }
+
+    final Object? dynamicTensor = _dynamicOutputTensor;
+    if (dynamicTensor == null) {
+      throw StateError(
+        'Tenseur de sortie non initialisé. Appelle load() avant classify().',
+      );
+    }
+
+    return dynamicTensor;
+  }
+
+  Object _prepareInputTensor(Float32List normalizedInput) {
+    final TensorType inputType = _inputTensorType ?? TensorType.float32;
+
+    if (inputType == TensorType.float32) {
+      final List<List<List<List<double>>>> inputTensor = _inputTensorOrThrow();
+      _fillInputTensorFromFlat(normalizedInput, inputTensor);
+      return inputTensor;
+    }
+
+    if (inputType == TensorType.uint8 || inputType == TensorType.int8) {
+      final List<List<List<List<int>>>> inputTensor =
+          _quantizedInputTensorOrThrow();
+      _fillQuantizedInputTensorFromFlat(
+        normalizedInput,
+        inputTensor,
+        inputType,
+      );
+      return inputTensor;
+    }
+
+    throw UnsupportedError('Type d\'entrée non supporté: $inputType');
+  }
+
+  List<double> _extractScoresFromOutput(Object outputTensor) {
+    final List<num> flatValues = <num>[];
+    _flattenNumericTensor(outputTensor, flatValues);
+
+    if (flatValues.isEmpty) {
+      return const <double>[];
+    }
+
+    final TensorType outputType = _outputTensorType ?? TensorType.float32;
+
+    if (outputType == TensorType.float32) {
+      return flatValues.map((num value) => value.toDouble()).toList();
+    }
+
+    if (outputType == TensorType.uint8) {
+      return flatValues
+          .map((num value) => value.toInt().clamp(0, 255) / 255.0)
+          .toList();
+    }
+
+    if (outputType == TensorType.int8) {
+      return flatValues
+          .map((num value) => (value.toInt().clamp(-128, 127) + 128) / 255.0)
+          .toList();
+    }
+
+    throw UnsupportedError('Type de sortie non supporté: $outputType');
+  }
+
+  List<List<List<List<int>>>> _quantizedInputTensorOrThrow() {
+    final List<List<List<List<int>>>>? tensor = _inputTensor4DQuantized;
     if (tensor == null) {
       throw StateError(
-          'Tenseur de sortie non initialisé. Appelle load() avant classify().');
+        'Tenseur d\'entrée quantifié non initialisé. Appelle load() avant classify().',
+      );
     }
     return tensor;
   }
@@ -160,6 +272,31 @@ class TfliteFlowerClassifierService {
     }
   }
 
+  void _fillQuantizedInputTensorFromFlat(
+    Float32List flatInput,
+    List<List<List<List<int>>>> inputTensor,
+    TensorType inputType,
+  ) {
+    int cursor = 0;
+    for (final batch in inputTensor) {
+      for (final row in batch) {
+        for (final pixel in row) {
+          for (int channelIndex = 0;
+              channelIndex < pixel.length;
+              channelIndex++) {
+            final double value = flatInput[cursor++].clamp(0.0, 1.0);
+            if (inputType == TensorType.uint8) {
+              pixel[channelIndex] = (value * 255.0).round().clamp(0, 255);
+            } else {
+              pixel[channelIndex] =
+                  ((value * 255.0) - 128.0).round().clamp(-128, 127);
+            }
+          }
+        }
+      }
+    }
+  }
+
   List<List<List<List<double>>>> _createInputTensor(List<int> shape) {
     final int batch = shape[0];
     final int height = shape[1];
@@ -175,6 +312,21 @@ class TfliteFlowerClassifierService {
     });
   }
 
+  List<List<List<List<int>>>> _createQuantizedInputTensor(List<int> shape) {
+    final int batch = shape[0];
+    final int height = shape[1];
+    final int width = shape[2];
+    final int channels = shape[3];
+
+    return List<List<List<List<int>>>>.generate(batch, (_) {
+      return List<List<List<int>>>.generate(height, (_) {
+        return List<List<int>>.generate(width, (_) {
+          return List<int>.filled(channels, 0);
+        });
+      });
+    });
+  }
+
   List<List<double>> _createOutputTensor(List<int> shape) {
     final int batch = shape.isNotEmpty ? shape.first : 1;
     final int classesCount = shape.isNotEmpty ? shape.last : 0;
@@ -183,5 +335,38 @@ class TfliteFlowerClassifierService {
       batch,
       (_) => List<double>.filled(classesCount, 0.0),
     );
+  }
+
+  Object _createDynamicTensor(List<int> shape, num defaultValue) {
+    if (shape.isEmpty) {
+      return defaultValue;
+    }
+
+    if (shape.length == 1) {
+      return List<num>.filled(shape.first, defaultValue, growable: false);
+    }
+
+    return List<Object>.generate(
+      shape.first,
+      (_) => _createDynamicTensor(shape.sublist(1), defaultValue),
+      growable: false,
+    );
+  }
+
+  void _flattenNumericTensor(Object value, List<num> out) {
+    if (value is List) {
+      for (final Object item in value) {
+        _flattenNumericTensor(item, out);
+      }
+      return;
+    }
+
+    if (value is num) {
+      out.add(value);
+      return;
+    }
+
+    throw UnsupportedError(
+        'Valeur non numérique dans la sortie modèle: $value');
   }
 }
