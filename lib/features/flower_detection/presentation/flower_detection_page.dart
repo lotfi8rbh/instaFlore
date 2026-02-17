@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
 
   CameraController? _cameraController;
   FlowerPrediction? _topPrediction;
+  Float32List? _inputBuffer;
 
   bool _isInitializing = true;
   bool _isProcessingFrame = false;
@@ -69,6 +71,13 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
 
       await controller.initialize();
       await _classifierService.load();
+
+      _inputBuffer = CameraFramePreprocessor.allocateInputBuffer(
+        targetWidth: _classifierService.inputWidth,
+        targetHeight: _classifierService.inputHeight,
+        targetChannels: _classifierService.inputChannels,
+      );
+
       await controller.startImageStream(_onFrame);
 
       if (!mounted) {
@@ -109,15 +118,21 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
     final Stopwatch stopwatch = Stopwatch()..start();
 
     try {
-      final input = CameraFramePreprocessor.preprocess(
+      final Float32List? inputBuffer = _inputBuffer;
+      if (inputBuffer == null) {
+        return;
+      }
+
+      CameraFramePreprocessor.preprocessIntoBuffer(
         image,
+        outputBuffer: inputBuffer,
         targetWidth: _classifierService.inputWidth,
         targetHeight: _classifierService.inputHeight,
         targetChannels: _classifierService.inputChannels,
       );
 
       final List<FlowerPrediction> predictions = _classifierService.classify(
-        input,
+        inputBuffer,
         topK: 1,
       );
 
@@ -150,6 +165,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       controller.dispose();
     }
     _classifierService.dispose();
+    _inputBuffer = null;
     super.dispose();
   }
 
