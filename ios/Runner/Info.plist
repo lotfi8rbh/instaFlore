@@ -45,5 +45,7 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Cette application utilise la caméra pour reconnaître les fleurs en temps réel.</string>
 </dict>
 </plist>
