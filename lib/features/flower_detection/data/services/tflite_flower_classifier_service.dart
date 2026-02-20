@@ -15,6 +15,10 @@ class TfliteFlowerClassifierService {
   List<int> _outputShape = const [];
   TensorType? _inputTensorType;
   TensorType? _outputTensorType;
+  double _inputScale = 1.0;
+  int _inputZeroPoint = 0;
+  double _outputScale = 1.0;
+  int _outputZeroPoint = 0;
   List<List<List<List<double>>>>? _inputTensor4D;
   List<List<List<List<int>>>>? _inputTensor4DQuantized;
   List<List<double>>? _outputTensor;
@@ -41,6 +45,8 @@ class TfliteFlowerClassifierService {
     _outputShape = outputTensor.shape;
     _inputTensorType = inputTensor.type;
     _outputTensorType = outputTensor.type;
+    _readQuantizationParams(inputTensor, isInput: true);
+    _readQuantizationParams(outputTensor, isInput: false);
     _labels = await _loadLabels();
     _initializeReusableTensors();
 
@@ -99,6 +105,10 @@ class TfliteFlowerClassifierService {
     _outputShape = const [];
     _inputTensorType = null;
     _outputTensorType = null;
+    _inputScale = 1.0;
+    _inputZeroPoint = 0;
+    _outputScale = 1.0;
+    _outputZeroPoint = 0;
     _inputTensor4D = null;
     _inputTensor4DQuantized = null;
     _outputTensor = null;
@@ -230,15 +240,17 @@ class TfliteFlowerClassifierService {
     }
 
     if (outputType == TensorType.uint8) {
-      return flatValues
-          .map((num value) => value.toInt().clamp(0, 255) / 255.0)
-          .toList();
+      return flatValues.map((num value) {
+        final int quantized = value.toInt().clamp(0, 255);
+        return (quantized - _outputZeroPoint) * _outputScale;
+      }).toList();
     }
 
     if (outputType == TensorType.int8) {
-      return flatValues
-          .map((num value) => (value.toInt().clamp(-128, 127) + 128) / 255.0)
-          .toList();
+      return flatValues.map((num value) {
+        final int quantized = value.toInt().clamp(-128, 127);
+        return (quantized - _outputZeroPoint) * _outputScale;
+      }).toList();
     }
 
     throw UnsupportedError('Type de sortie non supporté: $outputType');
@@ -284,17 +296,47 @@ class TfliteFlowerClassifierService {
           for (int channelIndex = 0;
               channelIndex < pixel.length;
               channelIndex++) {
-            final double value = flatInput[cursor++].clamp(0.0, 1.0);
+            final double value = flatInput[cursor++];
+            final int quantized =
+                ((value / _inputScale) + _inputZeroPoint).round();
             if (inputType == TensorType.uint8) {
-              pixel[channelIndex] = (value * 255.0).round().clamp(0, 255);
+              pixel[channelIndex] = quantized.clamp(0, 255);
             } else {
-              pixel[channelIndex] =
-                  ((value * 255.0) - 128.0).round().clamp(-128, 127);
+              pixel[channelIndex] = quantized.clamp(-128, 127);
             }
           }
         }
       }
     }
+  }
+
+  void _readQuantizationParams(Tensor tensor, {required bool isInput}) {
+    final dynamic dynamicTensor = tensor;
+    double scale = 1.0;
+    int zeroPoint = 0;
+
+    try {
+      final dynamic params = dynamicTensor.params;
+      final dynamic scaleValue = params?.scale;
+      final dynamic zeroPointValue = params?.zeroPoint;
+
+      if (scaleValue is num && scaleValue != 0) {
+        scale = scaleValue.toDouble();
+      }
+
+      if (zeroPointValue is num) {
+        zeroPoint = zeroPointValue.toInt();
+      }
+    } catch (_) {}
+
+    if (isInput) {
+      _inputScale = scale;
+      _inputZeroPoint = zeroPoint;
+      return;
+    }
+
+    _outputScale = scale;
+    _outputZeroPoint = zeroPoint;
   }
 
   List<List<List<List<double>>>> _createInputTensor(List<int> shape) {

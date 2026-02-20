@@ -2,6 +2,11 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 
+enum InputNormalizationMode {
+  zeroToOne,
+  mobileNetV2,
+}
+
 class CameraFramePreprocessor {
   const CameraFramePreprocessor._();
 
@@ -24,6 +29,7 @@ class CameraFramePreprocessor {
     required int targetWidth,
     required int targetHeight,
     required int targetChannels,
+    InputNormalizationMode normalizationMode = InputNormalizationMode.zeroToOne,
   }) {
     final Float32List outputBuffer = allocateInputBuffer(
       targetWidth: targetWidth,
@@ -37,6 +43,7 @@ class CameraFramePreprocessor {
       targetWidth: targetWidth,
       targetHeight: targetHeight,
       targetChannels: targetChannels,
+      normalizationMode: normalizationMode,
     );
 
     return outputBuffer;
@@ -48,6 +55,7 @@ class CameraFramePreprocessor {
     required int targetWidth,
     required int targetHeight,
     required int targetChannels,
+    InputNormalizationMode normalizationMode = InputNormalizationMode.zeroToOne,
   }) {
     _validateTargetDimensions(
       targetWidth: targetWidth,
@@ -69,6 +77,7 @@ class CameraFramePreprocessor {
         targetWidth: targetWidth,
         targetHeight: targetHeight,
         targetChannels: targetChannels,
+        normalizationMode: normalizationMode,
       );
       return;
     }
@@ -80,6 +89,7 @@ class CameraFramePreprocessor {
         targetWidth: targetWidth,
         targetHeight: targetHeight,
         targetChannels: targetChannels,
+        normalizationMode: normalizationMode,
       );
       return;
     }
@@ -95,6 +105,7 @@ class CameraFramePreprocessor {
     required int targetWidth,
     required int targetHeight,
     required int targetChannels,
+    required InputNormalizationMode normalizationMode,
   }) {
     final Plane yPlane = image.planes.first;
 
@@ -111,7 +122,10 @@ class CameraFramePreprocessor {
         final int yIndex =
             (sourceYClamped * yPlane.bytesPerRow) + sourceXClamped;
         final int luma = yPlane.bytes[yIndex];
-        final double normalized = luma / 255.0;
+        final double normalized = _normalize(
+          luma / 255.0,
+          normalizationMode,
+        );
 
         for (int channel = 0; channel < targetChannels; channel++) {
           outputBuffer[cursor++] = normalized;
@@ -126,6 +140,7 @@ class CameraFramePreprocessor {
     required int targetWidth,
     required int targetHeight,
     required int targetChannels,
+    required InputNormalizationMode normalizationMode,
   }) {
     final Plane plane = image.planes.first;
     final int bytesPerPixel = plane.bytesPerPixel ?? 4;
@@ -150,11 +165,11 @@ class CameraFramePreprocessor {
         if (targetChannels == 1) {
           final double luminance =
               ((0.299 * red) + (0.587 * green) + (0.114 * blue)) / 255.0;
-          outputBuffer[cursor++] = luminance;
+          outputBuffer[cursor++] = _normalize(luminance, normalizationMode);
         } else {
-          outputBuffer[cursor++] = red / 255.0;
-          outputBuffer[cursor++] = green / 255.0;
-          outputBuffer[cursor++] = blue / 255.0;
+          outputBuffer[cursor++] = _normalize(red / 255.0, normalizationMode);
+          outputBuffer[cursor++] = _normalize(green / 255.0, normalizationMode);
+          outputBuffer[cursor++] = _normalize(blue / 255.0, normalizationMode);
 
           for (int channel = 3; channel < targetChannels; channel++) {
             outputBuffer[cursor++] = 0;
@@ -172,5 +187,15 @@ class CameraFramePreprocessor {
     if (targetWidth <= 0 || targetHeight <= 0 || targetChannels <= 0) {
       throw ArgumentError('Dimensions cible invalides pour le prétraitement.');
     }
+  }
+
+  static double _normalize(
+    double zeroToOneValue,
+    InputNormalizationMode mode,
+  ) {
+    if (mode == InputNormalizationMode.mobileNetV2) {
+      return (zeroToOneValue * 2.0) - 1.0;
+    }
+    return zeroToOneValue;
   }
 }

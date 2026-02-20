@@ -17,6 +17,9 @@ class FlowerDetectionPage extends StatefulWidget {
 }
 
 class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
+  static const double _minimumReliableConfidence = 0.60;
+  static const int _predictionSmoothingWindow = 5;
+
   final TfliteFlowerClassifierService _classifierService =
       TfliteFlowerClassifierService();
 
@@ -29,6 +32,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
   String? _errorMessage;
   double? _lastInferenceMs;
   int _frameCounter = 0;
+  final List<FlowerPrediction> _recentPredictions = <FlowerPrediction>[];
 
   @override
   void initState() {
@@ -49,6 +53,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
 
     _inputBuffer = null;
     _frameCounter = 0;
+    _recentPredictions.clear();
 
     try {
       final PermissionStatus permissionStatus =
@@ -145,6 +150,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
         targetWidth: _classifierService.inputWidth,
         targetHeight: _classifierService.inputHeight,
         targetChannels: _classifierService.inputChannels,
+        normalizationMode: InputNormalizationMode.mobileNetV2,
       );
 
       final List<FlowerPrediction> predictions = _classifierService.classify(
@@ -157,8 +163,11 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       }
 
       stopwatch.stop();
+      final FlowerPrediction smoothedPrediction =
+          _getSmoothedPrediction(predictions.first);
+
       setState(() {
-        _topPrediction = predictions.first;
+        _topPrediction = smoothedPrediction;
         _lastInferenceMs = stopwatch.elapsedMicroseconds / 1000;
       });
     } catch (error, stackTrace) {
@@ -203,6 +212,42 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       return;
     }
     _initialize();
+  }
+
+  FlowerPrediction _getSmoothedPrediction(FlowerPrediction prediction) {
+    _recentPredictions.add(prediction);
+    if (_recentPredictions.length > _predictionSmoothingWindow) {
+      _recentPredictions.removeAt(0);
+    }
+
+    final Map<String, List<double>> confidenceByLabel =
+        <String, List<double>>{};
+    for (final FlowerPrediction item in _recentPredictions) {
+      confidenceByLabel.putIfAbsent(item.label, () => <double>[]).add(
+            item.confidence,
+          );
+    }
+
+    String selectedLabel = prediction.label;
+    double selectedAverage = prediction.confidence;
+    int selectedCount = -1;
+
+    confidenceByLabel.forEach((String label, List<double> confidences) {
+      final int count = confidences.length;
+      final double average =
+          confidences.reduce((double a, double b) => a + b) / count;
+
+      final bool shouldReplace = count > selectedCount ||
+          (count == selectedCount && average > selectedAverage);
+
+      if (shouldReplace) {
+        selectedLabel = label;
+        selectedAverage = average;
+        selectedCount = count;
+      }
+    });
+
+    return FlowerPrediction(label: selectedLabel, confidence: selectedAverage);
   }
 
   @override
@@ -271,7 +316,9 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
                 Text(
                   _topPrediction == null
                       ? 'Analyse en cours...'
-                      : 'Fleur: ${_topPrediction!.label}',
+                      : _topPrediction!.confidence >= _minimumReliableConfidence
+                          ? 'Fleur: ${_topPrediction!.label}'
+                          : 'Aucune fleur fiable détectée',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -282,7 +329,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
                 Text(
                   _topPrediction == null
                       ? 'Confiance: --'
-                      : 'Confiance: ${(_topPrediction!.confidence * 100).toStringAsFixed(1)}%',
+                      : 'Confiance: ${(_topPrediction!.confidence * 100).toStringAsFixed(1)}% (seuil: ${(_minimumReliableConfidence * 100).toStringAsFixed(0)}%)',
                   style: const TextStyle(color: Colors.white),
                 ),
                 const SizedBox(height: 4),
