@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'features/flower_detection/presentation/flower_detection_page.dart';
+import 'features/startup/presentation/startup_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,9 +14,10 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'InstaFlore',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
       ),
-      home: const FlowerDetectionPage(),
+      debugShowCheckedModeBanner: false,
+      home: const StartupPage(),
     );
   }
 }

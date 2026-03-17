@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../../core/widgets/app_loading_view.dart';
 import '../data/services/camera_frame_preprocessor.dart';
 import '../data/services/tflite_flower_classifier_service.dart';
 import '../domain/entities/flower_prediction.dart';
@@ -270,7 +271,9 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
 
   Widget _buildBody(CameraController? controller) {
     if (_isInitializing) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppLoadingView(
+        message: 'Initialisation de la caméra et du modèle...',
+      );
     }
 
     if (_errorMessage != null) {
