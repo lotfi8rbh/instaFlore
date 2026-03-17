@@ -6,8 +6,8 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 import '../../domain/entities/flower_prediction.dart';
 
 class TfliteFlowerClassifierService {
-  static const String modelAssetPath = 'assets/model_clustered.tflite';
-  static const String labelsAssetPath = 'assets/labels.txt';
+  static const String modelAssetPath = 'assets/flowers_model_quant.tflite';
+  static const String labelsAssetPath = 'assets/slabels.txt';
 
   Interpreter? _interpreter;
   List<String> _labels = const [];
