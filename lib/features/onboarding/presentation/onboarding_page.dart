@@ -61,12 +61,13 @@ class _OnboardingPageState extends State<OnboardingPage> {
   @override
   Widget build(BuildContext context) {
     final bool isLastPage = _currentPage == _pages.length - 1;
+    final bool isFirstPage = _currentPage == 0;
 
     return Scaffold(
       appBar: AppBar(
         actions: <Widget>[
           TextButton(
-            onPressed: _finishOnboarding,
+            onPressed: isLastPage ? null : _finishOnboarding,
             child: const Text('Passer'),
           ),
         ],
@@ -128,20 +129,42 @@ class _OnboardingPageState extends State<OnboardingPage> {
                 },
               ),
             ),
+            const SizedBox(height: 10),
+            Text(
+              'Étape ${_currentPage + 1}/${_pages.length}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: isLastPage
-                    ? _finishOnboarding
-                    : () {
-                        _pageController.nextPage(
-                          duration: const Duration(milliseconds: 250),
-                          curve: Curves.easeInOut,
-                        );
-                      },
-                child: Text(isLastPage ? 'Commencer' : 'Suivant'),
-              ),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: isFirstPage
+                        ? null
+                        : () {
+                            _pageController.previousPage(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                            );
+                          },
+                    child: const Text('Précédent'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: isLastPage
+                        ? _finishOnboarding
+                        : () {
+                            _pageController.nextPage(
+                              duration: const Duration(milliseconds: 250),
+                              curve: Curves.easeInOut,
+                            );
+                          },
+                    child: Text(isLastPage ? 'Commencer' : 'Suivant'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

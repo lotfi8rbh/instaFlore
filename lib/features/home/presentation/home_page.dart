@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../flower_detection/presentation/flower_detection_page.dart';
+import '../../onboarding/presentation/onboarding_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -19,7 +21,7 @@ class HomePage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('InstaFlore'),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -49,10 +51,26 @@ class HomePage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => _showQuickGuide(context),
-              icon: const Icon(Icons.menu_book_outlined),
-              label: const Text('Guide rapide'),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: <Widget>[
+                OutlinedButton.icon(
+                  onPressed: () => _showQuickGuide(context),
+                  icon: const Icon(Icons.menu_book_outlined),
+                  label: const Text('Guide rapide'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _showModelInfo(context),
+                  icon: const Icon(Icons.analytics_outlined),
+                  label: const Text('Infos modèle'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _restartOnboarding(context),
+                  icon: const Icon(Icons.refresh_outlined),
+                  label: const Text('Revoir onboarding'),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             Card(
@@ -109,6 +127,42 @@ class HomePage extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  void _showModelInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Informations modèle'),
+          content: const Text(
+            'Le modèle est optimisé pour la reconnaissance temps réel de 5 classes de fleurs.\n\n'
+            'Conseil: privilégie une bonne lumière et une fleur bien centrée pour améliorer la fiabilité.',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _restartOnboarding(BuildContext context) async {
+    final SharedPreferences preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(OnboardingPage.completedKey, false);
+
+    if (!context.mounted) {
+      return;
+    }
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => const OnboardingPage(),
+      ),
     );
   }
 }

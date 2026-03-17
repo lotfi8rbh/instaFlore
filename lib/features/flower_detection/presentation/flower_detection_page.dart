@@ -30,6 +30,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
 
   bool _isInitializing = true;
   bool _isProcessingFrame = false;
+  bool _isStreamPaused = false;
   String? _errorMessage;
   double? _lastInferenceMs;
   int _frameCounter = 0;
@@ -48,6 +49,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       _isInitializing = true;
       _errorMessage = null;
       _isProcessingFrame = false;
+      _isStreamPaused = false;
       _topPrediction = null;
       _lastInferenceMs = null;
     });
@@ -127,6 +129,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
   Future<void> _onFrame(CameraImage image) async {
     if (_isProcessingFrame ||
         !_classifierService.isReady ||
+        _isStreamPaused ||
         _errorMessage != null) {
       return;
     }
@@ -215,6 +218,12 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
     _initialize();
   }
 
+  void _toggleStreamPause() {
+    setState(() {
+      _isStreamPaused = !_isStreamPaused;
+    });
+  }
+
   FlowerPrediction _getSmoothedPrediction(FlowerPrediction prediction) {
     _recentPredictions.add(prediction);
     if (_recentPredictions.length > _predictionSmoothingWindow) {
@@ -264,7 +273,16 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
     final CameraController? controller = _cameraController;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('InstaFlore - Détection temps réel')),
+      appBar: AppBar(
+        title: const Text('InstaFlore - Détection temps réel'),
+        actions: <Widget>[
+          IconButton(
+            onPressed: _isInitializing ? null : _toggleStreamPause,
+            tooltip: _isStreamPaused ? 'Reprendre' : 'Mettre en pause',
+            icon: Icon(_isStreamPaused ? Icons.play_arrow : Icons.pause),
+          ),
+        ],
+      ),
       body: _buildBody(controller),
     );
   }
@@ -329,6 +347,17 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
                   ),
                 ),
                 const SizedBox(height: 6),
+                if (_isStreamPaused)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      'Analyse en pause',
+                      style: TextStyle(
+                        color: Colors.amber,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 Text(
                   _topPrediction == null
                       ? 'Confiance: --'
