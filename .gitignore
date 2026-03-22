@@ -44,3 +44,18 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Python / ML training artifacts
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+model_output/
+*.keras
+D:/
+
+# Claude Code internal
+.claude/
+
+# VS Code
+.vscode/
