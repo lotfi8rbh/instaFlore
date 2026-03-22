@@ -28,7 +28,6 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
   bool _isLoading = false;
   bool _isModelReady = false;
   String? _errorMessage;
-  double? _inferenceMs;
 
   @override
   void initState() {
@@ -71,14 +70,11 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
       maxHeight: 1024,
     );
 
-    if (file == null || !mounted) {
-      return;
-    }
+    if (file == null || !mounted) return;
 
     setState(() {
       _pickedFile = file;
       _prediction = null;
-      _inferenceMs = null;
       _errorMessage = null;
       _isLoading = true;
     });
@@ -99,23 +95,18 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
         throw StateError('Impossible de décoder les pixels de l\'image.');
       }
 
-      final Uint8List rgbaBytes = byteData.buffer.asUint8List();
-
-      final Stopwatch stopwatch = Stopwatch()..start();
       final List<FlowerPrediction> predictions =
           _classifierService.classifyRgbaImage(
-        rgbaBytes,
+        byteData.buffer.asUint8List(),
         sourceWidth: sourceWidth,
         sourceHeight: sourceHeight,
         topK: 1,
       );
-      stopwatch.stop();
 
       if (!mounted) return;
 
       setState(() {
         _prediction = predictions.isNotEmpty ? predictions.first : null;
-        _inferenceMs = stopwatch.elapsedMicroseconds / 1000;
       });
     } catch (error) {
       if (!mounted) return;
@@ -140,16 +131,14 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('InstaFlore - Analyser une photo'),
-      ),
+      appBar: AppBar(title: const Text('Analyser une photo')),
       body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
     if (_isLoading && !_isModelReady) {
-      return const AppLoadingView(message: 'Chargement du modèle...');
+      return const AppLoadingView(message: 'Préparation du modèle...');
     }
 
     if (_errorMessage != null && !_isModelReady) {
@@ -159,9 +148,11 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
               Text(_errorMessage!, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              ElevatedButton(
+              const SizedBox(height: 20),
+              FilledButton(
                 onPressed: _loadModel,
                 child: const Text('Réessayer'),
               ),
@@ -186,17 +177,22 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
             ),
           ),
           if (_isLoading && _isModelReady) ...<Widget>[
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             const Center(child: CircularProgressIndicator()),
-            const SizedBox(height: 8),
-            const Center(child: Text('Analyse en cours...')),
+            const SizedBox(height: 12),
+            const Center(
+              child: Text(
+                'Analyse en cours…',
+                style: TextStyle(fontSize: 15),
+              ),
+            ),
           ],
           if (_errorMessage != null && _isModelReady) ...<Widget>[
             const SizedBox(height: 16),
             _buildErrorCard(_errorMessage!),
           ],
           if (_prediction != null && !_isLoading) ...<Widget>[
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             _buildResultCard(_prediction!),
           ],
         ],
@@ -208,40 +204,45 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
     final XFile? file = _pickedFile;
 
     if (file == null) {
-      return Container(
-        height: 260,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
+      return GestureDetector(
+        onTap: _isLoading ? null : _pickAndAnalyze,
+        child: Container(
+          height: 280,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+              width: 1.5,
+            ),
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(
-              Icons.add_photo_alternate_outlined,
-              size: 56,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Aucune photo sélectionnée',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(
+                Icons.add_photo_alternate_outlined,
+                size: 64,
+                color: Theme.of(context).colorScheme.primary,
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                'Appuyez pour choisir une photo',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Image.file(
         File(file.path),
-        height: 260,
+        height: 280,
         width: double.infinity,
         fit: BoxFit.cover,
       ),
@@ -253,69 +254,82 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
         prediction.confidence >= _minimumReliableConfidence;
     final ColorScheme colors = Theme.of(context).colorScheme;
 
+    if (!isReliable) {
+      return Card(
+        color: colors.surfaceContainerHighest,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(
+            children: <Widget>[
+              Icon(Icons.help_outline, color: colors.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Text(
+                'Fleur non identifiée',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final int percent = (prediction.confidence * 100).round();
+
     return Card(
-      color: isReliable
-          ? colors.primaryContainer
-          : colors.surfaceContainerHighest,
+      color: colors.primaryContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               children: <Widget>[
-                Icon(
-                  isReliable ? Icons.check_circle_outline : Icons.help_outline,
-                  color: isReliable
-                      ? colors.onPrimaryContainer
-                      : colors.onSurfaceVariant,
-                ),
+                Icon(Icons.check_circle_outline,
+                    color: colors.onPrimaryContainer),
                 const SizedBox(width: 8),
                 Text(
-                  isReliable ? 'Fleur détectée' : 'Résultat incertain',
+                  'Fleur identifiée',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
-                    color: isReliable
-                        ? colors.onPrimaryContainer
-                        : colors.onSurfaceVariant,
+                    color: colors.onPrimaryContainer,
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            Text(
+              prediction.label,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: colors.onPrimaryContainer,
+              ),
+            ),
             const SizedBox(height: 10),
             Text(
-              isReliable ? prediction.label : 'Aucune fleur fiable détectée',
+              'Confiance $percent%',
               style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: isReliable
-                    ? colors.onPrimaryContainer
-                    : colors.onSurfaceVariant,
+                fontSize: 13,
+                color: colors.onPrimaryContainer.withOpacity(0.75),
               ),
             ),
             const SizedBox(height: 6),
-            Text(
-              'Confiance : ${(prediction.confidence * 100).toStringAsFixed(1)}% '
-              '(seuil : ${(_minimumReliableConfidence * 100).toStringAsFixed(0)}%)',
-              style: TextStyle(
-                color: isReliable
-                    ? colors.onPrimaryContainer
-                    : colors.onSurfaceVariant,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: prediction.confidence,
+                backgroundColor: colors.onPrimaryContainer.withOpacity(0.15),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  colors.onPrimaryContainer,
+                ),
+                minHeight: 6,
               ),
             ),
-            if (_inferenceMs != null) ...<Widget>[
-              const SizedBox(height: 4),
-              Text(
-                'Latence : ${_inferenceMs!.toStringAsFixed(1)} ms',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: (isReliable
-                          ? colors.onPrimaryContainer
-                          : colors.onSurfaceVariant)
-                      .withOpacity(0.7),
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -325,6 +339,7 @@ class _PhotoDetectionPageState extends State<PhotoDetectionPage> {
   Widget _buildErrorCard(String message) {
     return Card(
       color: Theme.of(context).colorScheme.errorContainer,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Text(

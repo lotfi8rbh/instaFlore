@@ -20,19 +20,19 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _OnboardingData(
       title: 'Bienvenue sur InstaFlore',
       description:
-          'Cette application reconnaît les fleurs en temps réel depuis la caméra de ton téléphone.',
+          'Identifiez instantanément vos fleurs grâce à l\'intelligence artificielle, directement depuis votre téléphone.',
       icon: Icons.local_florist_outlined,
     ),
     _OnboardingData(
-      title: 'Détection en direct',
+      title: 'Deux modes au choix',
       description:
-          'Lance la caméra, pointe une fleur, puis lis la classe prédite, la confiance et la latence.',
+          'Utilisez la caméra en temps réel ou importez une photo depuis votre galerie pour identifier une fleur.',
       icon: Icons.camera_alt_outlined,
     ),
     _OnboardingData(
-      title: 'Conseils de précision',
+      title: 'Conseils pour de bons résultats',
       description:
-          'Pour de meilleurs résultats: bonne lumière, fleur centrée, et distance stable.',
+          'Cadrez bien la fleur au centre, en pleine lumière naturelle et à une distance de 20 à 40 cm.',
       icon: Icons.tips_and_updates_outlined,
     ),
   ];

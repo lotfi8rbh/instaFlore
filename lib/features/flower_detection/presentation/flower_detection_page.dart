@@ -32,7 +32,6 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
   bool _isProcessingFrame = false;
   bool _isStreamPaused = false;
   String? _errorMessage;
-  double? _lastInferenceMs;
   int _frameCounter = 0;
   final List<FlowerPrediction> _recentPredictions = <FlowerPrediction>[];
 
@@ -51,7 +50,6 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       _isProcessingFrame = false;
       _isStreamPaused = false;
       _topPrediction = null;
-      _lastInferenceMs = null;
     });
 
     _inputBuffer = null;
@@ -108,9 +106,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       debugPrint('Erreur initialisation caméra/inférence: $error');
       debugPrintStack(stackTrace: stackTrace);
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       await _disposeCameraController();
 
@@ -135,18 +131,13 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
     }
 
     _frameCounter++;
-    if (_frameCounter % 4 != 0) {
-      return;
-    }
+    if (_frameCounter % 4 != 0) return;
 
     _isProcessingFrame = true;
-    final Stopwatch stopwatch = Stopwatch()..start();
 
     try {
       final Float32List? inputBuffer = _inputBuffer;
-      if (inputBuffer == null) {
-        return;
-      }
+      if (inputBuffer == null) return;
 
       CameraFramePreprocessor.preprocessIntoBuffer(
         image,
@@ -162,25 +153,16 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
         topK: 1,
       );
 
-      if (!mounted || predictions.isEmpty) {
-        return;
-      }
-
-      stopwatch.stop();
-      final FlowerPrediction smoothedPrediction =
-          _getSmoothedPrediction(predictions.first);
+      if (!mounted || predictions.isEmpty) return;
 
       setState(() {
-        _topPrediction = smoothedPrediction;
-        _lastInferenceMs = stopwatch.elapsedMicroseconds / 1000;
+        _topPrediction = _getSmoothedPrediction(predictions.first);
       });
     } catch (error, stackTrace) {
       debugPrint('Erreur pendant l\'analyse temps réel: $error');
       debugPrintStack(stackTrace: stackTrace);
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       await _disposeCameraController();
 
@@ -196,9 +178,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
     final CameraController? controller = _cameraController;
     _cameraController = null;
 
-    if (controller == null) {
-      return;
-    }
+    if (controller == null) return;
 
     try {
       if (controller.value.isStreamingImages) {
@@ -212,9 +192,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
   }
 
   void _retry() {
-    if (_isInitializing) {
-      return;
-    }
+    if (_isInitializing) return;
     _initialize();
   }
 
@@ -247,10 +225,8 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       final double average =
           confidences.reduce((double a, double b) => a + b) / count;
 
-      final bool shouldReplace = count > selectedCount ||
-          (count == selectedCount && average > selectedAverage);
-
-      if (shouldReplace) {
+      if (count > selectedCount ||
+          (count == selectedCount && average > selectedAverage)) {
         selectedLabel = label;
         selectedAverage = average;
         selectedCount = count;
@@ -273,14 +249,21 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
     final CameraController? controller = _cameraController;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('InstaFlore - Détection temps réel'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
         actions: <Widget>[
-          IconButton(
-            onPressed: _isInitializing ? null : _toggleStreamPause,
-            tooltip: _isStreamPaused ? 'Reprendre' : 'Mettre en pause',
-            icon: Icon(_isStreamPaused ? Icons.play_arrow : Icons.pause),
-          ),
+          if (!_isInitializing)
+            IconButton(
+              onPressed: _toggleStreamPause,
+              tooltip: _isStreamPaused ? 'Reprendre' : 'Pause',
+              icon: Icon(
+                _isStreamPaused ? Icons.play_circle_outline : Icons.pause_circle_outline,
+                size: 28,
+              ),
+            ),
         ],
       ),
       body: _buildBody(controller),
@@ -289,9 +272,7 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
 
   Widget _buildBody(CameraController? controller) {
     if (_isInitializing) {
-      return const AppLoadingView(
-        message: 'Initialisation de la caméra et du modèle...',
-      );
+      return const AppLoadingView(message: 'Préparation de la caméra...');
     }
 
     if (_errorMessage != null) {
@@ -301,12 +282,15 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 15),
               ),
-              const SizedBox(height: 12),
-              ElevatedButton(
+              const SizedBox(height: 20),
+              FilledButton(
                 onPressed: _retry,
                 child: const Text('Réessayer'),
               ),
@@ -324,55 +308,125 @@ class _FlowerDetectionPageState extends State<FlowerDetectionPage> {
       fit: StackFit.expand,
       children: <Widget>[
         CameraPreview(controller),
+
+        // Overlay résultat en bas
         Align(
           alignment: Alignment.bottomCenter,
           child: Container(
             width: double.infinity,
-            color: Colors.black54,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  _topPrediction == null
-                      ? 'Analyse en cours...'
-                      : _topPrediction!.confidence >= _minimumReliableConfidence
-                          ? 'Fleur: ${_topPrediction!.label}'
-                          : 'Aucune fleur fiable détectée',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                if (_isStreamPaused)
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      'Analyse en pause',
-                      style: TextStyle(
-                        color: Colors.amber,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                Text(
-                  _topPrediction == null
-                      ? 'Confiance: --'
-                      : 'Confiance: ${(_topPrediction!.confidence * 100).toStringAsFixed(1)}% (seuil: ${(_minimumReliableConfidence * 100).toStringAsFixed(0)}%)',
-                  style: const TextStyle(color: Colors.white),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _lastInferenceMs == null
-                      ? 'Latence: --'
-                      : 'Latence: ${_lastInferenceMs!.toStringAsFixed(1)} ms',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-              ],
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: <Color>[Colors.transparent, Colors.black87],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
             ),
+            padding: const EdgeInsets.fromLTRB(24, 40, 24, 40),
+            child: _buildResultOverlay(),
+          ),
+        ),
+
+        // Badge "En pause"
+        if (_isStreamPaused)
+          Positioned(
+            top: 100,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.pause, color: Colors.amber, size: 16),
+                    SizedBox(width: 6),
+                    Text(
+                      'Analyse en pause',
+                      style: TextStyle(color: Colors.amber, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildResultOverlay() {
+    final FlowerPrediction? prediction = _topPrediction;
+
+    if (prediction == null) {
+      return const Text(
+        'Pointez la caméra vers une fleur…',
+        style: TextStyle(color: Colors.white70, fontSize: 16),
+      );
+    }
+
+    final bool isReliable =
+        prediction.confidence >= _minimumReliableConfidence;
+
+    if (!isReliable) {
+      return const Text(
+        'Aucune fleur reconnue',
+        style: TextStyle(color: Colors.white60, fontSize: 16),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          prediction.label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 6),
+        _ConfidenceBar(confidence: prediction.confidence),
+      ],
+    );
+  }
+}
+
+class _ConfidenceBar extends StatelessWidget {
+  const _ConfidenceBar({required this.confidence});
+
+  final double confidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final int percent = (confidence * 100).round();
+    final Color barColor = confidence >= 0.85
+        ? Colors.greenAccent
+        : confidence >= 0.70
+            ? Colors.lightGreenAccent
+            : Colors.orangeAccent;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          'Confiance $percent%',
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: confidence,
+            backgroundColor: Colors.white24,
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            minHeight: 6,
           ),
         ),
       ],
