@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../flower_detection/presentation/flower_detection_page.dart';
 import '../../onboarding/presentation/onboarding_page.dart';
+import '../../photo_detection/presentation/photo_detection_page.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
@@ -48,6 +49,21 @@ class HomePage extends StatelessWidget {
                 },
                 icon: const Icon(Icons.camera_alt_outlined),
                 label: const Text('Lancer la détection'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const PhotoDetectionPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Analyser une photo'),
               ),
             ),
             const SizedBox(height: 12),

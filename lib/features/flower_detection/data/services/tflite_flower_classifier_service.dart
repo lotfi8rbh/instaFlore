@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../../domain/entities/flower_prediction.dart';
+import 'camera_frame_preprocessor.dart';
 
 class TfliteFlowerClassifierService {
   static const String modelAssetPath = 'assets/model_clustered.tflite';
@@ -56,6 +57,41 @@ class TfliteFlowerClassifierService {
         'Le nombre de labels (${_labels.length}) ne correspond pas au nombre de sorties du modèle ($classesCount).',
       );
     }
+  }
+
+  /// Classifie une image statique depuis ses bytes RGBA bruts.
+  ///
+  /// [rgbaBytes] : pixels RGBA 4 octets/pixel issus de dart:ui.
+  /// [sourceWidth] / [sourceHeight] : dimensions de l'image source.
+  List<FlowerPrediction> classifyRgbaImage(
+    Uint8List rgbaBytes, {
+    required int sourceWidth,
+    required int sourceHeight,
+    int topK = 1,
+  }) {
+    if (!isReady) {
+      throw StateError(
+          'Le modèle n\'est pas chargé. Appelle load() avant classifyRgbaImage().');
+    }
+
+    final Float32List inputBuffer = CameraFramePreprocessor.allocateInputBuffer(
+      targetWidth: inputWidth,
+      targetHeight: inputHeight,
+      targetChannels: inputChannels,
+    );
+
+    CameraFramePreprocessor.preprocessRgbaIntoBuffer(
+      rgbaBytes,
+      sourceWidth: sourceWidth,
+      sourceHeight: sourceHeight,
+      outputBuffer: inputBuffer,
+      targetWidth: inputWidth,
+      targetHeight: inputHeight,
+      targetChannels: inputChannels,
+      normalizationMode: InputNormalizationMode.mobileNetV2,
+    );
+
+    return classify(inputBuffer, topK: topK);
   }
 
   List<FlowerPrediction> classify(

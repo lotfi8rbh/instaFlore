@@ -179,6 +179,73 @@ class CameraFramePreprocessor {
     }
   }
 
+  /// Prétraite des bytes RGBA bruts (ex: issus de dart:ui Image.toByteData)
+  /// vers le buffer d'entrée du modèle.
+  ///
+  /// [rgbaBytes] : pixels en format RGBA, 4 octets par pixel, ligne par ligne.
+  /// [sourceWidth] / [sourceHeight] : dimensions de l'image source.
+  static void preprocessRgbaIntoBuffer(
+    Uint8List rgbaBytes, {
+    required int sourceWidth,
+    required int sourceHeight,
+    required Float32List outputBuffer,
+    required int targetWidth,
+    required int targetHeight,
+    required int targetChannels,
+    InputNormalizationMode normalizationMode = InputNormalizationMode.zeroToOne,
+  }) {
+    _validateTargetDimensions(
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+      targetChannels: targetChannels,
+    );
+
+    final int expectedLength = targetWidth * targetHeight * targetChannels;
+    if (outputBuffer.length != expectedLength) {
+      throw ArgumentError(
+        'Longueur du buffer invalide. Reçu: ${outputBuffer.length}, attendu: $expectedLength',
+      );
+    }
+
+    if (rgbaBytes.length != sourceWidth * sourceHeight * 4) {
+      throw ArgumentError(
+        'Taille des bytes RGBA invalide. Reçu: ${rgbaBytes.length}, attendu: ${sourceWidth * sourceHeight * 4}',
+      );
+    }
+
+    int cursor = 0;
+
+    for (int y = 0; y < targetHeight; y++) {
+      final int sourceY =
+          (y * sourceHeight / targetHeight).floor().clamp(0, sourceHeight - 1);
+
+      for (int x = 0; x < targetWidth; x++) {
+        final int sourceX =
+            (x * sourceWidth / targetWidth).floor().clamp(0, sourceWidth - 1);
+
+        final int pixelIndex = (sourceY * sourceWidth + sourceX) * 4;
+
+        final int red = rgbaBytes[pixelIndex];
+        final int green = rgbaBytes[pixelIndex + 1];
+        final int blue = rgbaBytes[pixelIndex + 2];
+
+        if (targetChannels == 1) {
+          final double luminance =
+              ((0.299 * red) + (0.587 * green) + (0.114 * blue)) / 255.0;
+          outputBuffer[cursor++] = _normalize(luminance, normalizationMode);
+        } else {
+          outputBuffer[cursor++] = _normalize(red / 255.0, normalizationMode);
+          outputBuffer[cursor++] = _normalize(green / 255.0, normalizationMode);
+          outputBuffer[cursor++] = _normalize(blue / 255.0, normalizationMode);
+
+          for (int channel = 3; channel < targetChannels; channel++) {
+            outputBuffer[cursor++] = 0;
+          }
+        }
+      }
+    }
+  }
+
   static void _validateTargetDimensions({
     required int targetWidth,
     required int targetHeight,
