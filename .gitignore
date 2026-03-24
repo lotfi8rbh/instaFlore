@@ -59,3 +59,9 @@ D:/
 
 # VS Code
 .vscode/
+
+# Présentation
+PRESENTATION.md
+PRESENTATION.pdf
+*.pptx
+*.pptx.pdf
